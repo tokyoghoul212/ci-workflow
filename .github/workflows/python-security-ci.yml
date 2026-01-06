@@ -189,6 +189,11 @@ jobs:
   ci:
     runs-on: ubuntu-latest
 
+    # Put secrets into env so step-level if can safely check env.*
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -218,18 +223,14 @@ jobs:
         run: ${{ inputs.test_command }}
 
       - name: SonarQube Scan (Server/Cloud)
-        if: ${{ inputs.run_sonar && secrets.SONAR_TOKEN != '' }}
+        if: ${{ inputs.run_sonar && env.SONAR_TOKEN != '' }}
         uses: SonarSource/sonarqube-scan-action@v7
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           projectBaseDir: ${{ inputs.working_directory }}
           args: ${{ inputs.sonar_args }}
 
       - name: Snyk Open Source scan
-        if: ${{ inputs.run_snyk && secrets.SNYK_TOKEN != '' }}
+        if: ${{ inputs.run_snyk && env.SNYK_TOKEN != '' }}
         uses: snyk/actions/python@master
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           args: ${{ inputs.snyk_args }}
