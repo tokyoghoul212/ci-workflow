@@ -1,38 +1,196 @@
-name: Python Security CI
+# name: Python Security CI
+
+# on:
+#   workflow_call:
+#     inputs:
+#       run_tests:
+#         description: "Run unit tests"
+#         required: false
+#         default: true
+#         type: boolean
+#       run_sonar:
+#         description: "Run SonarQube scan"
+#         required: false
+#         default: true
+#         type: boolean
+#       run_snyk:
+#         description: "Run Snyk scan"
+#         required: false
+#         default: true
+#         type: boolean
+#     secrets:
+#       SONAR_TOKEN:
+#         description: "Token for SonarQube / SonarCloud analysis"
+#         required: false
+#       SNYK_TOKEN:
+#         description: "Snyk API token"
+#         required: false
+
+# jobs:
+#   tests:
+#     if: ${{ inputs.run_tests }}
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - name: Checkout repository
+#         uses: actions/checkout@v4
+#         with:
+#           fetch-depth: 0
+
+#       - name: Set up Python
+#         uses: actions/setup-python@v5
+#         with:
+#           python-version: "3.11"
+
+#       - name: Install Python dependencies
+#         run: |
+#           python -m pip install --upgrade pip
+#           python -m pip install -r requirements.txt
+
+#       - name: Run tests
+#         env:
+#           PYTHONPATH: .
+#         run: |
+#           python -m pytest
+
+#   sonar:
+#     if: ${{ inputs.run_sonar }}
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - name: Checkout repository
+#         uses: actions/checkout@v4
+#         with:
+#           fetch-depth: 0
+
+#       - name: Check SONAR_TOKEN is passed
+#         run: |
+#           if [ -z "${{ secrets.SONAR_TOKEN }}" ]; then
+#             echo "SONAR_TOKEN was not passed from caller workflow."
+#             exit 1
+#           fi
+
+#       - name: SonarQube Cloud Scan
+#         uses: SonarSource/sonarqube-scan-action@v6
+#         env:
+#           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+#   snyk:
+#     if: ${{ inputs.run_snyk }}
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - name: Checkout repository
+#         uses: actions/checkout@v4
+#         with:
+#           fetch-depth: 0
+
+#       - name: Set up Python
+#         uses: actions/setup-python@v5
+#         with:
+#           python-version: "3.11"
+
+#       - name: Install Python dependencies
+#         run: |
+#           python -m pip install --upgrade pip
+#           python -m pip install -r requirements.txt
+
+#       - name: Set up Node.js for Snyk CLI
+#         uses: actions/setup-node@v4
+#         with:
+#           node-version: "20"
+
+#       - name: Install Snyk CLI
+#         run: npm install -g snyk
+
+#       - name: Snyk auth
+#         env:
+#           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+#         run: |
+#           if [ -z "$SNYK_TOKEN" ]; then
+#             echo "SNYK_TOKEN is NOT set. Please pass it from the caller workflow."
+#             exit 1
+#           fi
+#           snyk auth "$SNYK_TOKEN"
+
+#       - name: Run Snyk test (Python deps)
+#         run: |
+#           snyk test --severity-threshold=low
+
+name: Python Security CI (Reusable)
 
 on:
   workflow_call:
     inputs:
-      run_tests:
-        description: "Run unit tests"
+      python_version:
+        description: "Python version to use"
         required: false
-        default: true
+        type: string
+        default: "3.12"
+
+      working_directory:
+        description: "Directory to run commands in"
+        required: false
+        type: string
+        default: "."
+
+      requirements_file:
+        description: "Requirements file path (relative to working_directory)"
+        required: false
+        type: string
+        default: "requirements.txt"
+
+      run_tests:
+        description: "Run pytest"
+        required: false
         type: boolean
+        default: true
+
+      test_command:
+        description: "Test command to run"
+        required: false
+        type: string
+        default: "pytest -q"
+
       run_sonar:
         description: "Run SonarQube scan"
         required: false
-        default: true
         type: boolean
-      run_snyk:
-        description: "Run Snyk scan"
+        default: false
+
+      sonar_args:
+        description: "Extra Sonar scanner args (optional)"
         required: false
-        default: true
+        type: string
+        default: ""
+
+      run_snyk:
+        description: "Run Snyk (Open Source dependency scan)"
+        required: false
         type: boolean
+        default: false
+
+      snyk_args:
+        description: "Extra Snyk args (optional)"
+        required: false
+        type: string
+        default: "--severity-threshold=high"
+
     secrets:
       SONAR_TOKEN:
-        description: "Token for SonarQube / SonarCloud analysis"
         required: false
       SNYK_TOKEN:
-        description: "Snyk API token"
         required: false
 
+permissions:
+  contents: read
+
 jobs:
-  tests:
-    if: ${{ inputs.run_tests }}
+  ci:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -40,79 +198,38 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ inputs.python_version }}
+          cache: pip
+          cache-dependency-path: ${{ inputs.working_directory }}/${{ inputs.requirements_file }}
 
-      - name: Install Python dependencies
+      - name: Install dependencies
+        working-directory: ${{ inputs.working_directory }}
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+          if [ -f "${{ inputs.requirements_file }}" ]; then
+            pip install -r "${{ inputs.requirements_file }}"
+          else
+            echo "requirements file not found: ${{ inputs.requirements_file }} (skipping install)"
+          fi
 
       - name: Run tests
-        env:
-          PYTHONPATH: .
-        run: |
-          python -m pytest
+        if: ${{ inputs.run_tests }}
+        working-directory: ${{ inputs.working_directory }}
+        run: ${{ inputs.test_command }}
 
-  sonar:
-    if: ${{ inputs.run_sonar }}
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Check SONAR_TOKEN is passed
-        run: |
-          if [ -z "${{ secrets.SONAR_TOKEN }}" ]; then
-            echo "SONAR_TOKEN was not passed from caller workflow."
-            exit 1
-          fi
-
-      - name: SonarQube Cloud Scan
-        uses: SonarSource/sonarqube-scan-action@v6
+      - name: SonarQube Scan (Server/Cloud)
+        if: ${{ inputs.run_sonar && secrets.SONAR_TOKEN != '' }}
+        uses: SonarSource/sonarqube-scan-action@v7
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
-  snyk:
-    if: ${{ inputs.run_snyk }}
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          projectBaseDir: ${{ inputs.working_directory }}
+          args: ${{ inputs.sonar_args }}
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-
-      - name: Set up Node.js for Snyk CLI
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Install Snyk CLI
-        run: npm install -g snyk
-
-      - name: Snyk auth
+      - name: Snyk Open Source scan
+        if: ${{ inputs.run_snyk && secrets.SNYK_TOKEN != '' }}
+        uses: snyk/actions/python@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        run: |
-          if [ -z "$SNYK_TOKEN" ]; then
-            echo "SNYK_TOKEN is NOT set. Please pass it from the caller workflow."
-            exit 1
-          fi
-          snyk auth "$SNYK_TOKEN"
-
-      - name: Run Snyk test (Python deps)
-        run: |
-          snyk test --severity-threshold=low
+        with:
+          args: ${{ inputs.snyk_args }}
